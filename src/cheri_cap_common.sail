@@ -39,6 +39,8 @@ type cap_uperms_shift : Int = 15
 let  cap_uperms_shift = sizeof(cap_uperms_shift)
 type cap_perms_width : Int = cap_uperms_shift + cap_uperms_width
 let  cap_perms_width = sizeof(cap_perms_width)
+/*type cap_stack_frame_size_width : Int = 3
+let  cap_stack_frame_size_width = sizeof(cap_stack_frame_size_width)*/
 
 type CapAddrBits  = bits(cap_addr_width)
 type CapAddrInt   = range(0, (2 ^ cap_addr_width) - 1)
@@ -78,6 +80,7 @@ struct Capability = {
   B                      : bits(cap_mantissa_width),
   T                      : bits(cap_mantissa_width),
   otype                  : bits(cap_otype_width),
+  stack_frame_size       : bits(cap_stack_frame_size_width),
   address                : bits(cap_addr_width)
 }
 
@@ -103,6 +106,7 @@ let null_cap : Capability = struct {
   B                      = zeros(),
   T                      = cap_reset_T,
   otype                  = to_bits(cap_otype_width, otype_unsealed),
+  stack_frame_size       = zeros(),
   address                = zeros()
 }
 
@@ -128,6 +132,7 @@ let default_cap : Capability = struct {
   B                      = zeros(),
   T                      = cap_reset_T,
   otype                  = to_bits(cap_otype_width, otype_unsealed),
+  stack_frame_size       = zeros(),
   address                = zeros()
 }
 
@@ -193,6 +198,7 @@ function encCapabilityToCapability(t,c) : (bool, EncCapability) -> Capability = 
     B                      = Bs,
     T                      = Ttop2 @ T,
     otype                  = c.otype,
+    stack_frame_size       = c.stack_frame_size,
     address                = c.address
   }
 }
@@ -213,6 +219,7 @@ function capToEncCap(cap) : Capability -> EncCapability = {
     reserved = cap.reserved,
     flags = bool_to_bits(cap.flag_cap_mode),
     otype = cap.otype,
+    stack_frame_size = cap.stack_frame_size,
     internal_E = bool_to_bits(cap.internal_E)[0],
     T = t_hi @ t_lo,
     B = b_hi @ b_lo,
