@@ -1802,6 +1802,23 @@ function handle_store_cap_via_cap(cs2, auth_idx, auth_val, vaddrBits) = {
   }
 }
 
+val validate_store_cap_via_cap_lifetimes : (regidx, capreg_idx, Capability, xlenbits) -> Retired effect {escape, rreg, wreg}
+function validate_store_cap_via_cap_lifetimes(cs2, auth_idx, auth_val, vaddrBits) = {
+
+  /*
+   * TODO: Actually implement this fully!
+   *
+   * A the moment I've just been using this with RETIRE_SUCCESS and RETIRE_FAIL
+   * to make sure my infrastructure is all set up correctly.
+   */
+
+  /* let cs2_val = C(cs2); */
+  /* handle_cheri_cap_exception(CapEx_StackLifetimeViolation, auth_idx); */
+
+  /* RETIRE_FAIL */
+  RETIRE_SUCCESS
+}
+
 union clause ast = StoreCapDDC : (regidx, regidx)
 /*!
  * The capability located in memory at **DDC**.**address** $+$ *rs1* is
@@ -1848,6 +1865,16 @@ function clause execute (StoreCapCap(cs2, cs1)) = {
   let cs1_val = C(cs1);
   let vaddr = cs1_val.address;
   handle_store_cap_via_cap(cs2, 0b0 @ cs1, cs1_val, vaddr)
+}
+
+union clause ast = CheckStoreCapCapLifetimes : (regidx, regidx)
+/*!
+ * Stack temporal memory safety
+ */
+function clause execute (CheckStoreCapCapLifetimes(cs2, cs1)) = {
+  let cs1_val = C(cs1);
+  let vaddr = cs1_val.address;
+  validate_store_cap_via_cap_lifetimes(cs2, 0b0 @ cs1, cs1_val, vaddr)
 }
 
 union clause ast = AUIPCC : (bits(20), regidx)
@@ -2300,6 +2327,8 @@ mapping clause encdec = StoreDataCap(rs2, cs1, DOUBLE)  if (haveXcheri() & haveR
 mapping clause encdec = StoreCapCap(cs2, cs1)           if (haveXcheri() & sizeof(xlen) == 64) <-> 0b1111100 @ cs2 @ cs1 @ 0b000 @ 0b01100 @ 0b1011011 if (haveXcheri() & sizeof(xlen) == 64) /* sc.cap */
 mapping clause encdec = StoreCapCap(cs2, cs1)           if (haveXcheri() & sizeof(xlen) == 32) <-> 0b1111100 @ cs2 @ cs1 @ 0b000 @ 0b01011 @ 0b1011011 if (haveXcheri() & sizeof(xlen) == 32) /* sc.cap */
 
+mapping clause encdec = CheckStoreCapCapLifetimes(cs2, cs1) if (haveXcheri()) <-> 0b1111100 @ cs2 @ cs1 @ 0b000  @ 0b01101 @ 0b1011011 if (haveXcheri()) /* c.sc.cap */
+
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, BYTE)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10000 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.b.ddc */
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, HALF)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10001 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.h.ddc */
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, WORD)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10010 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.w.ddc */
@@ -2328,6 +2357,8 @@ mapping clause assembly = StoreDataDDC(rs2, rs1, w) <-> "s" ^ size_mnemonic(w) ^
 mapping clause assembly = StoreDataCap(rs2, cs1, w) <-> "s" ^ size_mnemonic(w) ^ ".cap" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCapDDC(cs2, rs1)     <-> "sc.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCapCap(cs2, cs1)     <-> "sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
+
+mapping clause assembly = CheckStoreCapCapLifetimes(cs2, cs1) <-> "c.sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ cap_reg_name(cs1)
 
 mapping clause assembly = StoreCondDataDDC(rs2, rs1, w) <-> "sc." ^ size_mnemonic(w) ^ ".ddc" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCondCapDDC(cs2, rs1)     <-> "sc.c.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
