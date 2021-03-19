@@ -587,6 +587,18 @@ function clause execute (CSetBoundsExact(cd, cs1, rs2)) = {
   }
 }
 
+union clause ast = CSetStackFrameSizeImm : (regidx, regidx, bits(12))
+/*!
+ * Capability register *cd* is set to capability register *cs1* with its
+ * **stack_frame_size** field replaced with the three least significant
+ * bits of *uimm*.
+ */
+function clause execute (CSetStackFrameSizeImm(cd, cs1, uimm)) = {
+  let cs1_val = C(cs1);
+  C(cd) = setStackFrameSizeBits(cs1_val, uimm);
+  RETIRE_SUCCESS
+}
+
 union clause ast = CClearTag : (regidx, regidx)
 /*!
  * Capability register *cd* is replaced with the contents of *cs1*, with
@@ -1802,6 +1814,39 @@ function handle_store_cap_via_cap(cs2, auth_idx, auth_val, vaddrBits) = {
   }
 }
 
+val get_stack_frame_mask : Capability -> bits(xlen)
+/*!
+ * Computes the mask to be applied to the capability's base adddress to
+ * obtain its lifetime value.
+ */
+function get_stack_frame_mask(cap) = {
+  let stack_frame_bits = cap.stack_frame_size;
+  match stack_frame_bits {
+    0b000 => 0x0000000000000000,
+        _ => 0x0000000000000080 << (unsigned(stack_frame_bits) - 1)
+  }
+}
+
+/*
+ * Validate that the lifetimes of a sc.cap instruction are appropritate,
+ * if they are stack addresses.
+ */
+val validate_store_cap_via_cap_lifetimes : (regidx, regidx) -> Retired effect {escape, rreg, wreg}
+function validate_store_cap_via_cap_lifetimes(cs2, cs1) = {
+  let cs1_val = C(cs1);
+  let cs2_val = C(cs2);
+  let cs1_mask = get_stack_frame_mask(cs1_val);
+  let cs2_mask = get_stack_frame_mask(cs2_val);
+  let cs1_lifetime = unsigned(getCapBaseBits(cs1_val) & cs1_mask);
+  let cs2_lifetime = unsigned(getCapBaseBits(cs2_val) & cs2_mask);
+  if cs2_lifetime > cs1_lifetime then {
+    handle_cheri_cap_exception(CapEx_StackLifetimeViolation, 0b0 @ cs2);
+    RETIRE_FAIL
+  } else {
+    RETIRE_SUCCESS
+  }
+}
+
 union clause ast = StoreCapDDC : (regidx, regidx)
 /*!
  * The capability located in memory at **DDC**.**address** $+$ *rs1* is
@@ -1848,6 +1893,20 @@ function clause execute (StoreCapCap(cs2, cs1)) = {
   let cs1_val = C(cs1);
   let vaddr = cs1_val.address;
   handle_store_cap_via_cap(cs2, 0b0 @ cs1, cs1_val, vaddr)
+}
+
+union clause ast = CheckStoreCapCapLifetimes : (regidx, regidx)
+/*!
+ * Checks that the capability *cs1* is not of a shorter lifetime than the
+ * capability *cs2*.
+ *
+ * ## Exceptions
+ *
+ * A StackLifetimeException is raised if:
+ *   - *cs2* is a stack capability of shorter lifetime than *cs1*.
+ */
+function clause execute (CheckStoreCapCapLifetimes(cs2, cs1)) = {
+  validate_store_cap_via_cap_lifetimes(cs2, cs1)
 }
 
 union clause ast = AUIPCC : (bits(20), regidx)
@@ -2300,6 +2359,8 @@ mapping clause encdec = StoreDataCap(rs2, cs1, DOUBLE)  if (haveXcheri() & haveR
 mapping clause encdec = StoreCapCap(cs2, cs1)           if (haveXcheri() & sizeof(xlen) == 64) <-> 0b1111100 @ cs2 @ cs1 @ 0b000 @ 0b01100 @ 0b1011011 if (haveXcheri() & sizeof(xlen) == 64) /* sc.cap */
 mapping clause encdec = StoreCapCap(cs2, cs1)           if (haveXcheri() & sizeof(xlen) == 32) <-> 0b1111100 @ cs2 @ cs1 @ 0b000 @ 0b01011 @ 0b1011011 if (haveXcheri() & sizeof(xlen) == 32) /* sc.cap */
 
+mapping clause encdec = CheckStoreCapCapLifetimes(cs2, cs1) if (haveXcheri()) <-> 0b1111100 @ cs2 @ cs1 @ 0b000  @ 0b01101 @ 0b1011011 if (haveXcheri()) /* c.sc.cap */
+
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, BYTE)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10000 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.b.ddc */
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, HALF)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10001 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.h.ddc */
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, WORD)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10010 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.w.ddc */
@@ -2328,6 +2389,8 @@ mapping clause assembly = StoreDataDDC(rs2, rs1, w) <-> "s" ^ size_mnemonic(w) ^
 mapping clause assembly = StoreDataCap(rs2, cs1, w) <-> "s" ^ size_mnemonic(w) ^ ".cap" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCapDDC(cs2, rs1)     <-> "sc.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCapCap(cs2, cs1)     <-> "sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
+
+mapping clause assembly = CheckStoreCapCapLifetimes(cs2, cs1) <-> "c.sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ cap_reg_name(cs1)
 
 mapping clause assembly = StoreCondDataDDC(rs2, rs1, w) <-> "sc." ^ size_mnemonic(w) ^ ".ddc" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCondCapDDC(cs2, rs1)     <-> "sc.c.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
