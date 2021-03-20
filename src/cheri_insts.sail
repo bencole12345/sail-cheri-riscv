@@ -1802,33 +1802,17 @@ function handle_store_cap_via_cap(cs2, auth_idx, auth_val, vaddrBits) = {
   }
 }
 
-/*
- * Compute the mask to be applied to possibly-stack capabilities
- * when validating their lifetimes in a c.sc.cap instruction.
+val get_stack_frame_mask : Capability -> bits(xlen)
+/*!
+ * Extracts the mask to be applied to the capability's base adddress to
+ * obtain its lifetime value.
  */
-val get_stack_frame_mask : (bits(cap_stack_frame_size_width)) -> bits(xlen)
-function get_stack_frame_mask(stack_frame_bits) = {
-  /*
-   * TODO: Find a way to do this without hard-coding all the zeroes
-   *
-   * I think the ^ operator does exponentiation
-   */
+function get_stack_frame_mask(cap) = {
+  let stack_frame_bits = cap.stack_frame_size;
   match stack_frame_bits {
     0b000 => 0x0000000000000000,
         _ => 0x0000000000000080 << (unsigned(stack_frame_bits) - 1)
   }
-}
-
-/*
- * Derive the actual masked address to be compared for the lifetime check.
- */
-val get_masked_base_address : (regidx) -> nat effect {escape, rreg}
-function get_masked_base_address(cs1) = {
-  let cs1_val = C(cs1);
-  let cs1_base = getCapBaseBits(cs1_val);
-  let mask = get_stack_frame_mask(cs1_val.stack_frame_size);
-  /* mask & cs1_base */
-  unsigned(mask & cs1_base)
 }
 
 /*
@@ -1837,9 +1821,13 @@ function get_masked_base_address(cs1) = {
  */
 val validate_store_cap_via_cap_lifetimes : (regidx, regidx) -> Retired effect {escape, rreg, wreg}
 function validate_store_cap_via_cap_lifetimes(cs2, cs1) = {
-  let cs1_masked_base = get_masked_base_address(cs1);
-  let cs2_masked_base = get_masked_base_address(cs2);
-  if cs1_masked_base > cs2_masked_base then {
+  let cs1_val = C(cs1);
+  let cs2_val = C(cs2);
+  let cs1_mask = get_stack_frame_mask(cs1_val);
+  let cs2_mask = get_stack_frame_mask(cs2_val);
+  let cs1_lifetime = unsigned(getCapBaseBits(cs1_val) & cs1_mask);
+  let cs2_lifetime = unsigned(getCapBaseBits(cs2_val) & cs2_mask);
+  if cs2_lifetime > cs1_lifetime then {
     handle_cheri_cap_exception(CapEx_StackLifetimeViolation, 0b0 @ cs2);
     RETIRE_FAIL
   } else {
@@ -1897,11 +1885,13 @@ function clause execute (StoreCapCap(cs2, cs1)) = {
 
 union clause ast = CheckStoreCapCapLifetimes : (regidx, regidx)
 /*!
- * Stack temporal memory safety
+ * Checks that the capability *cs1* is not of a shorter lifetime than the
+ * capability *cs2*.
  *
  * ## Exceptions
  *
- * TODO: List possible exceptions here
+ * A StackLifetimeException is raised if:
+ *   - *cs2* is a stack capability of shorter lifetime than *cs1*.
  */
 function clause execute (CheckStoreCapCapLifetimes(cs2, cs1)) = {
   validate_store_cap_via_cap_lifetimes(cs2, cs1)

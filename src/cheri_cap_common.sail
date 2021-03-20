@@ -39,8 +39,6 @@ type cap_uperms_shift : Int = 15
 let  cap_uperms_shift = sizeof(cap_uperms_shift)
 type cap_perms_width : Int = cap_uperms_shift + cap_uperms_width
 let  cap_perms_width = sizeof(cap_perms_width)
-/*type cap_stack_frame_size_width : Int = 3
-let  cap_stack_frame_size_width = sizeof(cap_stack_frame_size_width)*/
 
 type CapAddrBits  = bits(cap_addr_width)
 type CapAddrInt   = range(0, (2 ^ cap_addr_width) - 1)
