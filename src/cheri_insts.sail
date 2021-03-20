@@ -1802,21 +1802,49 @@ function handle_store_cap_via_cap(cs2, auth_idx, auth_val, vaddrBits) = {
   }
 }
 
-val validate_store_cap_via_cap_lifetimes : (regidx, capreg_idx, Capability, xlenbits) -> Retired effect {escape, rreg, wreg}
-function validate_store_cap_via_cap_lifetimes(cs2, auth_idx, auth_val, vaddrBits) = {
-
+/*
+ * Compute the mask to be applied to possibly-stack capabilities
+ * when validating their lifetimes in a c.sc.cap instruction.
+ */
+val get_stack_frame_mask : (bits(cap_stack_frame_size_width)) -> bits(xlen)
+function get_stack_frame_mask(stack_frame_bits) = {
   /*
-   * TODO: Actually implement this fully!
+   * TODO: Find a way to do this without hard-coding all the zeroes
    *
-   * A the moment I've just been using this with RETIRE_SUCCESS and RETIRE_FAIL
-   * to make sure my infrastructure is all set up correctly.
+   * I think the ^ operator does exponentiation
    */
+  match stack_frame_bits {
+    0b000 => 0x0000000000000000,
+        _ => 0x0000000000000080 << (unsigned(stack_frame_bits) - 1)
+  }
+}
 
-  /* let cs2_val = C(cs2); */
-  /* handle_cheri_cap_exception(CapEx_StackLifetimeViolation, auth_idx); */
+/*
+ * Derive the actual masked address to be compared for the lifetime check.
+ */
+val get_masked_base_address : (regidx) -> nat effect {escape, rreg}
+function get_masked_base_address(cs1) = {
+  let cs1_val = C(cs1);
+  let cs1_base = getCapBaseBits(cs1_val);
+  let mask = get_stack_frame_mask(cs1_val.stack_frame_size);
+  /* mask & cs1_base */
+  unsigned(mask & cs1_base)
+}
 
-  /* RETIRE_FAIL */
-  RETIRE_SUCCESS
+/*
+ * Validate that the lifetimes of a sc.cap instruction are appropritate,
+ * if they are stack addresses.
+ */
+val validate_store_cap_via_cap_lifetimes : (regidx, regidx) -> Retired effect {escape, rreg, wreg}
+function validate_store_cap_via_cap_lifetimes(cs2, cs1) = {
+  let cs1_masked_base = get_masked_base_address(cs1);
+  let cs2_masked_base = get_masked_base_address(cs2);
+  if cs1_masked_base > cs2_masked_base then {
+    handle_cheri_cap_exception(CapEx_StackLifetimeViolation, 0b0 @ cs2);
+    RETIRE_FAIL
+  } else {
+    RETIRE_SUCCESS
+  }
 }
 
 union clause ast = StoreCapDDC : (regidx, regidx)
@@ -1870,11 +1898,13 @@ function clause execute (StoreCapCap(cs2, cs1)) = {
 union clause ast = CheckStoreCapCapLifetimes : (regidx, regidx)
 /*!
  * Stack temporal memory safety
+ *
+ * ## Exceptions
+ *
+ * TODO: List possible exceptions here
  */
 function clause execute (CheckStoreCapCapLifetimes(cs2, cs1)) = {
-  let cs1_val = C(cs1);
-  let vaddr = cs1_val.address;
-  validate_store_cap_via_cap_lifetimes(cs2, 0b0 @ cs1, cs1_val, vaddr)
+  validate_store_cap_via_cap_lifetimes(cs2, cs1)
 }
 
 union clause ast = AUIPCC : (bits(20), regidx)
