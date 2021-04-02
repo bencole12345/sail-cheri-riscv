@@ -587,6 +587,18 @@ function clause execute (CSetBoundsExact(cd, cs1, rs2)) = {
   }
 }
 
+union clause ast = CSetStackFrameSizeImm : (regidx, regidx, bits(12))
+/*!
+ * Capability register *cd* is set to capability register *cs1* with its
+ * **stack_frame_size** field replaced with the three least significant
+ * bits of *uimm*.
+ */
+function clause execute (CSetStackFrameSizeImm(cd, cs1, uimm)) = {
+  let cs1_val = C(cs1);
+  C(cd) = setStackFrameSizeBits(cs1_val, uimm);
+  RETIRE_SUCCESS
+}
+
 union clause ast = CClearTag : (regidx, regidx)
 /*!
  * Capability register *cd* is replaced with the contents of *cs1*, with
