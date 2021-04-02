@@ -45,6 +45,8 @@ type cap_uperms_width : Int = 0
 let  cap_uperms_width = sizeof(cap_uperms_width)
 type cap_otype_width : Int = 4
 let  cap_otype_width = sizeof(cap_otype_width)
+type cap_stack_frame_size_width : Int = 0
+let  cap_stack_frame_size_width = sizeof(cap_stack_frame_size_width)
 type cap_reserved_width : Int = 0
 let  cap_reserved_width = sizeof(cap_reserved_width)
 type cap_flags_width : Int = 1
@@ -69,6 +71,7 @@ let  internal_E_take_bits = sizeof(internal_E_take_bits)
 struct EncCapability = {
   perms      : bits(cap_uperms_width + cap_hperms_width),
   otype      : bits(cap_otype_width),
+  stack_frame_size : bits(cap_stack_frame_size_width),
   reserved   : bits(cap_reserved_width),
   flags      : bits(cap_flags_width),
   internal_E : bit,
@@ -82,6 +85,7 @@ function capBitsToEncCapability(c) : CapBits -> EncCapability = struct {
   reserved   = [],
   flags      = c[51..51],
   otype      = c[50..47],
+  stack_frame_size = [],
   internal_E = c[46],
   T          = c[45..40],
   B          = c[39..32],
