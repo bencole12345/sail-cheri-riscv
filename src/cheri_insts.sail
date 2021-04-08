@@ -595,7 +595,7 @@ union clause ast = CSetStackFrameSizeImm : (regidx, regidx, bits(12))
  */
 function clause execute (CSetStackFrameSizeImm(cd, cs1, uimm)) = {
   let cs1_val = C(cs1);
-  C(cd) = setStackFrameSizeBits(cs1_val, uimm);
+  C(cd) = set_stack_frame_size_bits(cs1_val, uimm);
   RETIRE_SUCCESS
 }
 
@@ -1827,23 +1827,45 @@ function get_stack_frame_mask(cap) = {
   }
 }
 
-/*
- * Validate that the lifetimes of a sc.cap instruction are appropritate,
- * if they are stack addresses.
+val is_stack_capability : Capability -> bool
+/*!
+ * Determines whether a given capability points to the stack.
  */
-val validate_store_cap_via_cap_lifetimes : (regidx, regidx) -> Retired effect {escape, rreg, wreg}
-function validate_store_cap_via_cap_lifetimes(cs2, cs1) = {
-  let cs1_val = C(cs1);
-  let cs2_val = C(cs2);
-  let cs1_mask = get_stack_frame_mask(cs1_val);
-  let cs2_mask = get_stack_frame_mask(cs2_val);
-  let cs1_lifetime = unsigned(getCapBaseBits(cs1_val) & cs1_mask);
-  let cs2_lifetime = unsigned(getCapBaseBits(cs2_val) & cs2_mask);
-  if cs2_lifetime > cs1_lifetime then {
-    handle_cheri_cap_exception(CapEx_StackLifetimeViolation, 0b0 @ cs2);
+function is_stack_capability(cap) = {
+  cap.stack_frame_size == 0b000
+}
+
+val validate_store_cap_via_cap_lifetimes : (regidx, capreg_idx, Capability, xlenbits) -> Retired effect {escape, rreg, wreg}
+/*!
+ * Validate the implied lifetimes of the operands to a store instruction by
+ * reading the capabilities' stack frame size bits and comparing masked
+ * addresses.
+ */
+function validate_store_cap_via_cap_lifetimes(cs2, auth_idx, auth_val, vaddrBits) = {
+  let cap_source = C(cs2);
+  let cap_destination = auth_val;
+
+  if not (is_stack_capability(cap_source)) then {
+    RETIRE_SUCCESS
+  } else if not (is_stack_capability(cap_destination)) then {
+    handle_cheri_cap_exception(CapEx_StackLifetimeViolation, auth_idx);
     RETIRE_FAIL
   } else {
-    RETIRE_SUCCESS
+    let source_mask = get_stack_frame_mask(cap_source);
+    let destination_mask = get_stack_frame_mask(cap_destination);
+    let source_address = cap_source.address;
+    let destination_address = vaddrBits;
+    let source_lifetime = unsigned(source_address & source_mask);
+    let destination_lifetime = unsigned(destination_address & destination_mask);
+
+    /* We use a downwards-growing stack */
+    if destination_lifetime < source_lifetime then {
+      /* Undecided: which capability should we blame? */
+      handle_cheri_cap_exception(CapEx_StackLifetimeViolation, auth_idx);
+      RETIRE_FAIL
+    } else {
+      RETIRE_SUCCESS
+    }
   }
 }
 
@@ -1895,18 +1917,20 @@ function clause execute (StoreCapCap(cs2, cs1)) = {
   handle_store_cap_via_cap(cs2, 0b0 @ cs1, cs1_val, vaddr)
 }
 
-union clause ast = CheckStoreCapCapLifetimes : (regidx, regidx)
+union clause ast = CheckStoreCapCap : (regidx, regidx)
 /*!
- * Checks that the capability *cs1* is not of a shorter lifetime than the
- * capability *cs2*.
+ * Checks that the capability *cs1* is not of a shorter implied lifetime than
+ * the capability *cs2*.
  *
  * ## Exceptions
  *
  * A StackLifetimeException is raised if:
  *   - *cs2* is a stack capability of shorter lifetime than *cs1*.
  */
-function clause execute (CheckStoreCapCapLifetimes(cs2, cs1)) = {
-  validate_store_cap_via_cap_lifetimes(cs2, cs1)
+function clause execute (CheckStoreCapCap(cs2, cs1)) = {
+  let cs1_val = C(cs1);
+  let vaddr = cs1_val.address;
+  validate_store_cap_via_cap_lifetimes(cs2, 0b0 @ cs1, cs1_val, vaddr)
 }
 
 union clause ast = AUIPCC : (bits(20), regidx)
@@ -1997,6 +2021,22 @@ function clause execute StoreCapImm(cs2, rs1_cs1, imm) = {
   let offset : xlenbits = EXTS(imm);
   let (auth_val, vaddr, auth_idx) = get_cheri_mode_cap_addr(rs1_cs1, offset);
   handle_store_cap_via_cap(cs2, auth_idx, auth_val, vaddr)
+}
+
+union clause ast = CheckStoreCapImm : (regidx, regidx, bits(12))
+/*!
+ * Checks that the capability *cs1* is not of a shorter implied lifetime than
+ * the capability *cs2*.
+ *
+ * ## Exceptions
+ *
+ * A StackLifetimeException is raised if:
+ *   - *cs2* is a stack capability of shorter lifetime than *cs1*.
+ */
+function clause execute CheckStoreCapImm(cs2, rs1_cs1, imm) = {
+  let offset : xlenbits = EXTS(imm);
+  let (auth_val, vaddr, auth_idx) = get_cheri_mode_cap_addr(rs1_cs1, offset);
+  validate_store_cap_via_cap_lifetimes(cs2, auth_idx, auth_val, vaddr)
 }
 
 val handle_store_cond_data_via_cap : (regidx, capreg_idx, Capability, xlenbits, word_width) -> Retired effect {eamem, escape, rmem, rmemt, rreg, wmv, wmvt, wreg}
@@ -2358,8 +2398,7 @@ mapping clause encdec = StoreDataCap(rs2, cs1, WORD)    if (haveXcheri()) <-> 0b
 mapping clause encdec = StoreDataCap(rs2, cs1, DOUBLE)  if (haveXcheri() & haveRV64) <-> 0b1111100 @ rs2 @ cs1 @ 0b000 @ 0b01011 @ 0b1011011 if (haveXcheri() & haveRV64) /* sd.cap */
 mapping clause encdec = StoreCapCap(cs2, cs1)           if (haveXcheri() & sizeof(xlen) == 64) <-> 0b1111100 @ cs2 @ cs1 @ 0b000 @ 0b01100 @ 0b1011011 if (haveXcheri() & sizeof(xlen) == 64) /* sc.cap */
 mapping clause encdec = StoreCapCap(cs2, cs1)           if (haveXcheri() & sizeof(xlen) == 32) <-> 0b1111100 @ cs2 @ cs1 @ 0b000 @ 0b01011 @ 0b1011011 if (haveXcheri() & sizeof(xlen) == 32) /* sc.cap */
-
-mapping clause encdec = CheckStoreCapCapLifetimes(cs2, cs1) if (haveXcheri()) <-> 0b1111100 @ cs2 @ cs1 @ 0b000  @ 0b01101 @ 0b1011011 if (haveXcheri()) /* c.sc.cap */
+mapping clause encdec = CheckStoreCapCap(cs2, cs1)      if (haveXcheri()) <-> 0b1111100 @ cs2 @ cs1 @ 0b000  @ 0b01101 @ 0b1011011 if (haveXcheri()) /* c.sc.cap */
 
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, BYTE)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10000 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.b.ddc */
 mapping clause encdec = StoreCondDataDDC(rs2, rs1, HALF)   if (haveXcheri() & haveAtomics()) <-> 0b1111100 @ rs2 @ rs1 @ 0b000 @ 0b10001 @ 0b1011011 if (haveXcheri() & haveAtomics()) /* sc.h.ddc */
@@ -2385,12 +2424,11 @@ mapping clause assembly = LoadResCapDDC(cd, cs1)     <-> "lr.c.ddc" ^ spc() ^ ca
 mapping clause assembly = LoadResCap(rd, cs1, w)     <-> "lr." ^ size_mnemonic(w) ^ ".cap" ^ spc() ^ reg_name(rd) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
 mapping clause assembly = LoadResCapCap(cd, cs1)     <-> "lr.c.cap" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
 
-mapping clause assembly = StoreDataDDC(rs2, rs1, w) <-> "s" ^ size_mnemonic(w) ^ ".ddc" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
-mapping clause assembly = StoreDataCap(rs2, cs1, w) <-> "s" ^ size_mnemonic(w) ^ ".cap" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
-mapping clause assembly = StoreCapDDC(cs2, rs1)     <-> "sc.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
-mapping clause assembly = StoreCapCap(cs2, cs1)     <-> "sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
-
-mapping clause assembly = CheckStoreCapCapLifetimes(cs2, cs1) <-> "c.sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = StoreDataDDC(rs2, rs1, w)  <-> "s" ^ size_mnemonic(w) ^ ".ddc" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
+mapping clause assembly = StoreDataCap(rs2, cs1, w)  <-> "s" ^ size_mnemonic(w) ^ ".cap" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
+mapping clause assembly = StoreCapDDC(cs2, rs1)      <-> "sc.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
+mapping clause assembly = StoreCapCap(cs2, cs1)      <-> "sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ cap_reg_name(cs1) ^ opt_spc() ^ ")"
+mapping clause assembly = CheckStoreCapCap(cs2, cs1) <-> "c.sc.cap" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ cap_reg_name(cs1)
 
 mapping clause assembly = StoreCondDataDDC(rs2, rs1, w) <-> "sc." ^ size_mnemonic(w) ^ ".ddc" ^ spc() ^ reg_name(rs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCondCapDDC(cs2, rs1)     <-> "sc.c.ddc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
@@ -2400,8 +2438,10 @@ mapping clause assembly = StoreCondCapCap(cs2, cs1)     <-> "sc.c.cap" ^ spc() ^
 mapping clause encdec = LoadCapImm(cd, rs1, offset) if sizeof(xlen) == 64 <-> offset @ rs1 @ 0b010 @ cd @ 0b0001111 if sizeof(xlen) == 64 /* lc */
 mapping clause encdec = LoadCapImm(cd, rs1, offset) if sizeof(xlen) == 32 <-> offset @ rs1 @ 0b011 @ cd @ 0b0000011 if sizeof(xlen) == 32 /* lc */
 
-mapping clause encdec = StoreCapImm(cs2, rs1, off7 @ off5) if sizeof(xlen) == 64 <-> off7 : bits(7) @ cs2 @ rs1 @ 0b100 @ off5 : bits(5) @ 0b0100011 if sizeof(xlen) == 64 /* sc */
-mapping clause encdec = StoreCapImm(cs2, rs1, off7 @ off5) if sizeof(xlen) == 32 <-> off7 : bits(7) @ cs2 @ rs1 @ 0b011 @ off5 : bits(5) @ 0b0100011 if sizeof(xlen) == 32 /* sc */
+mapping clause encdec = StoreCapImm(cs2, rs1, off7 @ off5) if sizeof(xlen) == 64      <-> off7 : bits(7) @ cs2 @ rs1 @ 0b100 @ off5 : bits(5) @ 0b0100011 if sizeof(xlen) == 64 /* sc */
+mapping clause encdec = StoreCapImm(cs2, rs1, off7 @ off5) if sizeof(xlen) == 32      <-> off7 : bits(7) @ cs2 @ rs1 @ 0b011 @ off5 : bits(5) @ 0b0100011 if sizeof(xlen) == 32 /* sc */
+mapping clause encdec = CheckStoreCapImm(cs2, rs1, off7 @ off5) if sizeof(xlen) == 64 <-> off7 : bits(7) @ cs2 @ rs1 @ 0b101 @ off5 : bits(5) @ 0b0100011 if sizeof(xlen) == 64 /* csc */
 
 mapping clause assembly = LoadCapImm(cd, rs1, offset)   <-> "lc" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ hex_bits_12(offset) ^ opt_spc() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
 mapping clause assembly = StoreCapImm(cs2, rs1, offset) <-> "sc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ hex_bits_12(offset) ^ opt_spc() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"
+mapping clause assembly = CheckStoreCapImm(cs2, rs1, offset) <-> "csc" ^ spc() ^ cap_reg_name(cs2) ^ sep() ^ hex_bits_12(offset) ^ opt_spc() ^ "(" ^ opt_spc() ^ reg_name(rs1) ^ opt_spc() ^ ")"

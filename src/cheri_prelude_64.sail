@@ -76,15 +76,15 @@ let  internal_E_take_bits = sizeof(internal_E_take_bits)
 
 /* Capability format completely compressed. Tag is out of band */
 struct EncCapability = {
-  perms      : bits(cap_uperms_width + cap_hperms_width),
-  otype      : bits(cap_otype_width),
+  perms            : bits(cap_uperms_width + cap_hperms_width),
+  otype            : bits(cap_otype_width),
   stack_frame_size : bits(cap_stack_frame_size_width),
-  reserved   : bits(cap_reserved_width),
-  flags      : bits(cap_flags_width),
-  internal_E : bit,
-  T          : bits(cap_mantissa_width - 2),
-  B          : bits(cap_mantissa_width),
-  address    : bits(cap_addr_width)
+  reserved         : bits(cap_reserved_width),
+  flags            : bits(cap_flags_width),
+  internal_E       : bit,
+  T                : bits(cap_mantissa_width - 2),
+  B                : bits(cap_mantissa_width),
+  address          : bits(cap_addr_width)
 }
 
 function capBitsToEncCapability(c) : CapBits -> EncCapability = struct {

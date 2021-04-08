@@ -505,7 +505,7 @@ function incCapOffset(c, delta) : (Capability, CapAddrBits) -> (bool, Capability
     let representable = fastRepCheck(c, delta) in
     (representable, newCap)
 
-function setStackFrameSizeBits(c, value) : (Capability, bits(12)) -> Capability =
+function set_stack_frame_size_bits(c, value) : (Capability, bits(12)) -> Capability =
     let masked = truncate(value, cap_stack_frame_size_width) & 0b111 in
     {c with stack_frame_size = masked}
 
