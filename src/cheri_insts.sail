@@ -34,15 +34,16 @@
 
 /* Operations that extract parts of a capability into GPR */
 
-union clause ast = CGetPerm   : (regidx, regidx)
-union clause ast = CGetType   : (regidx, regidx)
-union clause ast = CGetBase   : (regidx, regidx)
-union clause ast = CGetLen    : (regidx, regidx)
-union clause ast = CGetTag    : (regidx, regidx)
-union clause ast = CGetSealed : (regidx, regidx)
-union clause ast = CGetOffset : (regidx, regidx)
-union clause ast = CGetAddr   : (regidx, regidx)
-union clause ast = CGetFlags  : (regidx, regidx)
+union clause ast = CGetPerm           : (regidx, regidx)
+union clause ast = CGetType           : (regidx, regidx)
+union clause ast = CGetBase           : (regidx, regidx)
+union clause ast = CGetLen            : (regidx, regidx)
+union clause ast = CGetTag            : (regidx, regidx)
+union clause ast = CGetSealed         : (regidx, regidx)
+union clause ast = CGetOffset         : (regidx, regidx)
+union clause ast = CGetAddr           : (regidx, regidx)
+union clause ast = CGetFlags          : (regidx, regidx)
+union clause ast = CGetStackFrameSize : (regidx, regidx)
 
 /*!
  * The least significant [cap_hperms_width] bits of integer register *rd* are
@@ -592,11 +593,37 @@ union clause ast = CSetStackFrameSizeImm : (regidx, regidx, bits(12))
  * Capability register *cd* is set to capability register *cs1* with its
  * **stack_frame_size** field replaced with the three least significant
  * bits of *uimm*.
+ *
+ * An exception is raised if:
+ *   - *cs1*.**tag** is not set.
  */
 function clause execute (CSetStackFrameSizeImm(cd, cs1, uimm)) = {
   let cs1_val = C(cs1);
-  C(cd) = set_stack_frame_size_bits(cs1_val, uimm);
-  RETIRE_SUCCESS
+  if not (cs1_val.tag) then {
+    handle_cheri_reg_exception(CapEx_TagViolation, cs1);
+    RETIRE_FAIL
+  } else {
+    C(cd) = set_stack_frame_size_bits(cs1_val, uimm);
+    RETIRE_SUCCESS
+  }
+}
+
+/*!
+ * Integer register *rd* is set equal to the **stack_frame_size** field of
+ * capability register *cs1*.
+ *
+ * An exception is raised if:
+ *   - *cs1*.**tag** is not set.
+ */
+function clause execute (CGetStackFrameSize(rd, cs1)) = {
+  let cs1_val = C(cs1);
+  if not (cs1_val.tag) then {
+    handle_cheri_reg_exception(CapEx_TagViolation, cs1);
+    RETIRE_FAIL
+  } else {
+    X(rd) = EXTZ(get_stack_frame_size_bits(cs1_val));
+    RETIRE_SUCCESS
+  }
 }
 
 union clause ast = CClearTag : (regidx, regidx)
@@ -2236,15 +2263,16 @@ three-arg ones.
 
 /* Two arg */
 
-mapping clause encdec = CGetPerm(rd, cs1)   if (haveXcheri()) <-> 0b1111111 @ 0b00000 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetType(rd, cs1)   if (haveXcheri()) <-> 0b1111111 @ 0b00001 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetBase(rd, cs1)   if (haveXcheri()) <-> 0b1111111 @ 0b00010 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetLen(rd, cs1)    if (haveXcheri()) <-> 0b1111111 @ 0b00011 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetTag(rd, cs1)    if (haveXcheri()) <-> 0b1111111 @ 0b00100 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetSealed(rd, cs1) if (haveXcheri()) <-> 0b1111111 @ 0b00101 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetOffset(rd, cs1) if (haveXcheri()) <-> 0b1111111 @ 0b00110 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetFlags(rd, cs1)  if (haveXcheri()) <-> 0b1111111 @ 0b00111 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetAddr(rd, cs1)   if (haveXcheri()) <-> 0b1111111 @ 0b01111 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetPerm(rd, cs1)           if (haveXcheri()) <-> 0b1111111 @ 0b00000 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetType(rd, cs1)           if (haveXcheri()) <-> 0b1111111 @ 0b00001 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetBase(rd, cs1)           if (haveXcheri()) <-> 0b1111111 @ 0b00010 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetLen(rd, cs1)            if (haveXcheri()) <-> 0b1111111 @ 0b00011 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetTag(rd, cs1)            if (haveXcheri()) <-> 0b1111111 @ 0b00100 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetSealed(rd, cs1)         if (haveXcheri()) <-> 0b1111111 @ 0b00101 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetOffset(rd, cs1)         if (haveXcheri()) <-> 0b1111111 @ 0b00110 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetFlags(rd, cs1)          if (haveXcheri()) <-> 0b1111111 @ 0b00111 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetAddr(rd, cs1)           if (haveXcheri()) <-> 0b1111111 @ 0b01111 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetStackFrameSize(rd, cs1) if (haveXcheri()) <-> 0b1111111 @ 0b10000 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
 
 mapping clause encdec = CMove(cd, cs1)      if (haveXcheri()) <-> 0b1111111 @ 0b01010 @ cs1 @ 0b000 @ cd @ 0b1011011 if (haveXcheri())
 mapping clause encdec = CClearTag(cd, cs1)  if (haveXcheri()) <-> 0b1111111 @ 0b01011 @ cs1 @ 0b000 @ cd @ 0b1011011 if (haveXcheri())
@@ -2260,15 +2288,16 @@ mapping clause encdec = Clear(q, m3 @ m5)   if (haveXcheri() & haveSplitRegFile)
 mapping clause encdec = CClear(q, m3 @ m5)  if (haveXcheri()) <-> 0b1111111 @ 0b01110 @ q : bits(2) @ m3 : bits(3) @ 0b000 @ m5 : regidx @ 0b1011011 if (haveXcheri())
 mapping clause encdec = FPClear(q, m3 @ m5) if (haveXcheri()) <-> 0b1111111 @ 0b10000 @ q : bits(2) @ m3 : bits(3) @ 0b000 @ m5 : regidx @ 0b1011011 if (haveXcheri())
 
-mapping clause assembly = CGetPerm(rd, cs1)   <-> "cgetperm"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetFlags(rd, cs1)  <-> "cgetflags"  ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetType(rd, cs1)   <-> "cgettype"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetBase(rd, cs1)   <-> "cgetbase"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetLen(rd, cs1)    <-> "cgetlen"    ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetTag(rd, cs1)    <-> "cgettag"    ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetSealed(rd, cs1) <-> "cgetsealed" ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetOffset(rd, cs1) <-> "cgetoffset" ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
-mapping clause assembly = CGetAddr(rd, cs1)   <-> "cgetaddr"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetPerm(rd, cs1)           <-> "cgetperm"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetFlags(rd, cs1)          <-> "cgetflags"  ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetType(rd, cs1)           <-> "cgettype"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetBase(rd, cs1)           <-> "cgetbase"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetLen(rd, cs1)            <-> "cgetlen"    ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetTag(rd, cs1)            <-> "cgettag"    ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetSealed(rd, cs1)         <-> "cgetsealed" ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetOffset(rd, cs1)         <-> "cgetoffset" ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetAddr(rd, cs1)           <-> "cgetaddr"   ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
+mapping clause assembly = CGetStackFrameSize(rd, cs1) <-> "cgfs"       ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1)
 
 mapping clause assembly = CMove(cd, cs1)      <-> "cmove"      ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1)
 mapping clause assembly = CClearTag(cd, cs1)  <-> "ccleartag"  ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1)

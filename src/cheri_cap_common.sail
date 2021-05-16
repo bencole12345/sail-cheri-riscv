@@ -509,6 +509,8 @@ function set_stack_frame_size_bits(c, value) : (Capability, bits(12)) -> Capabil
     let masked = truncate(value, cap_stack_frame_size_width) & 0b111 in
     {c with stack_frame_size = masked}
 
+function get_stack_frame_size_bits(c) : (Capability) -> bits(3) =
+    c.stack_frame_size
 
 val capToString : (Capability) -> string effect {escape}
 function capToString (cap) = {
