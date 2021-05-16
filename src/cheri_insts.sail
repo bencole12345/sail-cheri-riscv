@@ -588,7 +588,7 @@ function clause execute (CSetBoundsExact(cd, cs1, rs2)) = {
   }
 }
 
-union clause ast = CSetStackFrameSizeImm : (regidx, regidx, bits(12))
+union clause ast = CSetStackFrameSizeImmediate : (regidx, regidx, bits(12))
 /*!
  * Capability register *cd* is set to capability register *cs1* with its
  * **stack_frame_size** field replaced with the three least significant
@@ -597,7 +597,7 @@ union clause ast = CSetStackFrameSizeImm : (regidx, regidx, bits(12))
  * An exception is raised if:
  *   - *cs1*.**tag** is not set.
  */
-function clause execute (CSetStackFrameSizeImm(cd, cs1, uimm)) = {
+function clause execute (CSetStackFrameSizeImmediate(cd, cs1, uimm)) = {
   let cs1_val = C(cs1);
   if not (cs1_val.tag) then {
     handle_cheri_reg_exception(CapEx_TagViolation, cs1);
@@ -2336,8 +2336,9 @@ mapping clause encdec = CSub(rd, cs1, cs2)        if (haveXcheri()) <-> 0b001010
 mapping clause encdec = CTestSubset(rd, cs1, cs2) if (haveXcheri()) <-> 0b0100000 @ cs2 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
 mapping clause encdec = CSpecialRW(cd, scr, cs1)  if (haveXcheri()) <-> 0b0000001 @ scr @ cs1 @ 0b000 @ cd @ 0b1011011 if (haveXcheri())
 
-mapping clause encdec = CIncOffsetImmediate(cd, cs1, imm12) if (haveXcheri()) <-> imm12 : bits(12) @ cs1 @ 0b001 @ cd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CSetBoundsImmediate(cd, cs1, imm12) if (haveXcheri()) <-> imm12 : bits(12) @ cs1 @ 0b010 @ cd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CIncOffsetImmediate(cd, cs1, imm12) if (haveXcheri())         <-> imm12 : bits(12) @ cs1 @ 0b001 @ cd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CSetBoundsImmediate(cd, cs1, imm12) if (haveXcheri())         <-> imm12 : bits(12) @ cs1 @ 0b010 @ cd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CSetStackFrameSizeImmediate(cd, cs1, imm12) if (haveXcheri()) <-> imm12 : bits(12) @ cs1 @ 0b011 @ cd @ 0b1011011 if (haveXcheri())
 
 mapping clause encdec = CSEQX(rd, cs1, cs2) if (haveXcheri()) <-> 0b0100001 @ cs2 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
 
@@ -2362,8 +2363,9 @@ mapping clause assembly = CTestSubset(rd, cs1, cs2) <-> "ctestsubset" ^ spc() ^ 
 
 mapping clause assembly = CSpecialRW(cd, scr, cs1) <-> "cspecialrw"  ^ spc() ^ cap_reg_name(cd) ^ sep() ^ scr_name_map(scr) ^ sep() ^ cap_reg_name(cs1)
 
-mapping clause assembly = CIncOffsetImmediate(cd, cs1, imm12) <-> "cincoffsetimm" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1) ^ sep() ^ hex_bits_12(imm12)
-mapping clause assembly = CSetBoundsImmediate(cd, cs1, imm12) <-> "csetboundsimm" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1) ^ sep() ^ hex_bits_12(imm12)
+mapping clause assembly = CIncOffsetImmediate(cd, cs1, imm12)         <-> "cincoffsetimm" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1) ^ sep() ^ hex_bits_12(imm12)
+mapping clause assembly = CSetBoundsImmediate(cd, cs1, imm12)         <-> "csetboundsimm" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1) ^ sep() ^ hex_bits_12(imm12)
+mapping clause assembly = CSetStackFrameSizeImmediate(cd, cs1, imm12) <-> "csfs" ^ spc() ^ cap_reg_name(cd) ^ sep() ^ cap_reg_name(cs1) ^ sep() ^ hex_bits_12(imm12)
 
 mapping clause assembly = CSEQX(rd, cs1, cs2) <-> "cseqx" ^ spc() ^ reg_name(rd) ^ sep() ^ cap_reg_name(cs1) ^ sep() ^ cap_reg_name(cs2)
 
