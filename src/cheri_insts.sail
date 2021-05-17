@@ -2272,7 +2272,7 @@ mapping clause encdec = CGetSealed(rd, cs1)         if (haveXcheri()) <-> 0b1111
 mapping clause encdec = CGetOffset(rd, cs1)         if (haveXcheri()) <-> 0b1111111 @ 0b00110 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
 mapping clause encdec = CGetFlags(rd, cs1)          if (haveXcheri()) <-> 0b1111111 @ 0b00111 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
 mapping clause encdec = CGetAddr(rd, cs1)           if (haveXcheri()) <-> 0b1111111 @ 0b01111 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
-mapping clause encdec = CGetStackFrameSize(rd, cs1) if (haveXcheri()) <-> 0b1111111 @ 0b10000 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
+mapping clause encdec = CGetStackFrameSize(rd, cs1) if (haveXcheri()) <-> 0b1111111 @ 0b10011 @ cs1 @ 0b000 @ rd @ 0b1011011 if (haveXcheri())
 
 mapping clause encdec = CMove(cd, cs1)      if (haveXcheri()) <-> 0b1111111 @ 0b01010 @ cs1 @ 0b000 @ cd @ 0b1011011 if (haveXcheri())
 mapping clause encdec = CClearTag(cd, cs1)  if (haveXcheri()) <-> 0b1111111 @ 0b01011 @ cs1 @ 0b000 @ cd @ 0b1011011 if (haveXcheri())
