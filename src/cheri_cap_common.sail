@@ -32,6 +32,7 @@
 /*  SUCH DAMAGE.                                                          */
 /*========================================================================*/
 
+let cap_min_addr = zeros(cap_addr_width)
 let cap_max_addr = MAX(cap_addr_width)
 let cap_max_otype = MAX(cap_otype_width) - reserved_otypes
 
@@ -505,12 +506,35 @@ function incCapOffset(c, delta) : (Capability, CapAddrBits) -> (bool, Capability
     let representable = fastRepCheck(c, delta) in
     (representable, newCap)
 
-function set_stack_frame_size_bits(c, value) : (Capability, bits(12)) -> Capability =
-    let masked = truncate(value, cap_stack_frame_size_width) & 0b111 in
-    {c with stack_frame_size = masked}
+function getImpliedCapLifetime(c) : Capability -> CapAddrBits = {
+    let frameSizeBits = c.stack_frame_size;
+    if (frameSizeBits == 0b000) then {
+      /* Heap address, so give it the maximal lifetime */
+      cap_min_addr
+    } else {
+      /* Stack address, so derive lifetime from address and frame size */
+      let address = c.address;
+      let mask = 0xffffffffffffffc0 << unsigned(frameSizeBits);
+      let masked = address & mask;
+      /*
+       * We need to add this correction to ensure that the implied lifetime
+       * points to the start of the stack frame, not the end. The endpoints of
+       * a large frame followed by a small frame may be equal, but their start
+       * points will definitely be distinct.
+       */
+      let offset = 0x0000000000000040 << unsigned(frameSizeBits);
+      masked + offset
+    }
+}
 
-function get_stack_frame_size_bits(c) : (Capability) -> bits(3) =
+function setStackFrameSizeBits(c, value) : (Capability, bits(12)) -> Capability = {
+    let masked = truncate(value, cap_stack_frame_size_width) & 0b111;
+    {c with stack_frame_size = masked}
+}
+
+function getStackFrameSizeBits(c) : (Capability) -> bits(3) = {
     c.stack_frame_size
+}
 
 val capToString : (Capability) -> string effect {escape}
 function capToString (cap) = {
