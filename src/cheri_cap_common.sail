@@ -506,25 +506,20 @@ function incCapOffset(c, delta) : (Capability, CapAddrBits) -> (bool, Capability
     let representable = fastRepCheck(c, delta) in
     (representable, newCap)
 
-function getImpliedCapLifetime(c) : Capability -> CapAddrBits = {
+function getStackFrameBase(c) : Capability -> Capability = {
     let frameSizeBits = c.stack_frame_size;
-    if (frameSizeBits == 0b000) then {
-      /* Heap address, so give it the maximal lifetime */
+    let base_address = if (frameSizeBits == 0b000) then {
+      /* Heap address, so give it the maximal lifetime. */
       cap_min_addr
     } else {
-      /* Stack address, so derive lifetime from address and frame size */
+      /* Stack address, so derive lifetime from address and frame size. */
       let address = c.address;
       let mask = 0xffffffffffffffc0 << unsigned(frameSizeBits);
       let masked = address & mask;
-      /*
-       * We need to add this correction to ensure that the implied lifetime
-       * points to the start of the stack frame, not the end. The endpoints of
-       * a large frame followed by a small frame may be equal, but their start
-       * points will definitely be distinct.
-       */
       let offset = 0x0000000000000040 << unsigned(frameSizeBits);
       masked + offset
-    }
+    };
+    {c with address = base_address}
 }
 
 function setStackFrameSizeBits(c, value) : (Capability, bits(12)) -> Capability = {

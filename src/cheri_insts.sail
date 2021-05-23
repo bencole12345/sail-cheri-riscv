@@ -44,7 +44,6 @@ union clause ast = CGetOffset         : (regidx, regidx)
 union clause ast = CGetAddr           : (regidx, regidx)
 union clause ast = CGetFlags          : (regidx, regidx)
 union clause ast = CGetStackFrameSize : (regidx, regidx)
-union clause ast = CGetFrameBase      : (regidx, regidx)
 
 /*!
  * The least significant [cap_hperms_width] bits of integer register *rd* are
@@ -627,17 +626,19 @@ function clause execute (CGetStackFrameSize(rd, cs1)) = {
   }
 }
 
+union clause ast = CGetFrameBase : (regidx, regidx)
 /*!
- * Integer register *rd* is set equal to lowest address of the stack frame
- * described by the capability in register *cs1*.
+ * Capabiltiy register *cd* is set equal to a capability pointing to the lowest
+ * address of the stack frame described by the capability in register *cs1*,
+ * with the same permissions as the capability in register *cs1*.
  */
-function clause execute (CGetFrameBase(rd, cs1)) = {
+function clause execute (CGetFrameBase(cd, cs1)) = {
   let cs1_val = C(cs1);
   if not (cs1_val.tag) then {
     handle_cheri_reg_exception(CapEx_TagViolation, cs1);
     RETIRE_FAIL
   } else {
-    X(rd) = EXTZ(getImpliedCapLifetime(cs1_val));
+    C(cd) = getStackFrameBase(cs1_val);
     RETIRE_SUCCESS
   }
 }
@@ -1863,16 +1864,19 @@ val validate_store_cap_via_cap_lifetimes : (regidx, capreg_idx, Capability, xlen
  * Validate the implied lifetimes of the operands to a store instruction by
  * reading the capabilities' stack frame size bits and comparing masked
  * addresses.
+ *
+ * Assumes a downwards-growing stack. In the event of a lifetime violation,
+ * blames the capability being stored so that its stack frame can be marked for
+ * revocation.
  */
 function validate_store_cap_via_cap_lifetimes(cs2, auth_idx, auth_val, vaddrBits) = {
   let cap_source = C(cs2);
   let cap_destination = auth_val;
-  let source_lifetime = getImpliedCapLifetime(cap_source);
-  let destination_lifetime = getImpliedCapLifetime(cap_destination);
-
-  /* We use a downwards-growing stack */
+  let source_cap_frame_base = getStackFrameBase(cap_source);
+  let destination_cap_frame_base = getStackFrameBase(cap_destination);
+  let source_lifetime = source_cap_frame_base.address;
+  let destination_lifetime = destination_cap_frame_base.address;
   if destination_lifetime <_u source_lifetime then {
-    /* Blame the stored capability so that it can be marked for revocation. */
     handle_cheri_cap_exception(CapEx_StackLifetimeViolation, 0b0 @ cs2);
     RETIRE_FAIL
   } else {
